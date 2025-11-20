@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import PlayerManager from './components/PlayerManager';
 import GameSetup from './components/GameSetup';
 import Scoreboard from './components/Scoreboard';
 import PlayerStats from './components/PlayerStats';
+import Settings from './components/Settings';
+import Login from './components/Login';
 import { uploadGameStats } from './services/googleSheets';
 
 function App() {
@@ -12,12 +15,17 @@ function App() {
     });
 
     const [gameState, setGameState] = useState('setup'); // setup, playing, stats
+    const [showSettings, setShowSettings] = useState(false);
     const [gameSettings, setGameSettings] = useState({
         target: 301,
         selectedPlayerIds: []
     });
 
     const [currentMatch, setCurrentMatch] = useState(null);
+    const [user, setUser] = useState(null);
+    const [authToken, setAuthToken] = useState(null);
+
+    const clientId = localStorage.getItem('darts_google_client_id');
 
     useEffect(() => {
         localStorage.setItem('darts_players', JSON.stringify(players));
@@ -83,22 +91,52 @@ function App() {
                 winner: winner.name,
                 target: gameSettings.target,
                 players: stats.map(s => s.name).join(', '),
-                dartsThrown: stats.find(s => s.id === winnerId).dartsThrown
+                dartsThrown: stats.find(s => s.id === winnerId).dartsThrown,
+                authToken: authToken // Pass the token
             });
             alert('Game saved to cloud!');
         } catch (e) {
             console.error('Upload failed', e);
-            alert('Failed to upload stats, but game is saved locally.');
+            // If it failed because of missing URL, we might want to open settings
+            if (e.message === 'MISSING_URL') {
+                if (confirm('Google Sheet URL is missing. Would you like to configure it now?')) {
+                    setShowSettings(true);
+                }
+            } else {
+                alert('Failed to upload stats. ' + (e.message || ''));
+            }
         }
 
         setGameState('setup');
     };
 
-    return (
+    const handleLogin = (decodedUser, token) => {
+        setUser(decodedUser);
+        setAuthToken(token);
+    };
+
+    const content = (
         <div className="container">
-            <div className="header">
+            <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h1>🎯 Pro Darts Scorer</h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {clientId && (
+                        <Login onLogin={handleLogin} user={user} />
+                    )}
+                    <button
+                        onClick={() => setShowSettings(true)}
+                        className="btn btn-secondary"
+                        style={{ padding: '8px', fontSize: '1.2rem' }}
+                        title="Settings"
+                    >
+                        ⚙️
+                    </button>
+                </div>
             </div>
+
+            {showSettings && (
+                <Settings onClose={() => setShowSettings(false)} />
+            )}
 
             {gameState === 'setup' && (
                 <>
@@ -137,6 +175,16 @@ function App() {
             )}
         </div>
     );
+
+    if (clientId) {
+        return (
+            <GoogleOAuthProvider clientId={clientId}>
+                {content}
+            </GoogleOAuthProvider>
+        );
+    }
+
+    return content;
 }
 
 export default App;
